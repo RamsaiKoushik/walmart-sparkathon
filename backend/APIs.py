@@ -17,6 +17,38 @@ tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained("bert-base-uncased")
 users_collection = mongo.db.users  # Collection for storing users
 
+
+@app.route('/rewards/<user_id>/<category>', methods=['GET'])
+def get_rewards(user_id, category):
+    rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
+    if rewards_data and category in rewards_data:
+        alpha = rewards_data[category][0]
+        beta = rewards_data[category][1]
+        return jsonify(rewards_data[category]), 200
+    else:
+        return jsonify({"error": "User or category not found"}), 404
+
+
+@app.route('/rewards/<user_id>/<category>', methods=['PUT'])
+def update_rewards(user_id, category):
+    alpha = request.json.get('alpha')
+    beta = request.json.get('beta')
+
+    if alpha is None or beta is None:
+        return jsonify({"error": "Both alpha and beta are required"}), 400
+
+    update_result = mongo.db.rewards.update_one(
+        {"user_id": user_id},
+        {"$set": {f"{category}.alpha": alpha, f"{category}.beta": beta}},
+        upsert=True
+    )
+
+    if update_result.modified_count > 0 or update_result.upserted_id is not None:
+        return jsonify({"message": "Rewards updated successfully"}), 200
+    else:
+        return jsonify({"error": "Failed to update rewards"}), 400
+
+
 @app.route('/register', methods=['POST'])
 def register_user():
     username = request.json.get('username')
@@ -51,7 +83,6 @@ def login_user():
         return jsonify({"message": "Login successful", "user_id": str(user['_id'])}), 200
     else:
         return jsonify({"error": "Invalid username or password"}), 401
-
 
 def serialize_doc(doc):
     doc['_id'] = str(doc['_id'])
@@ -114,11 +145,38 @@ def get_recommendations(user_id):
     category_embedding = get_category_embedding()
     category_similarity = {}
     for ch in category_embedding:
-        category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])
-    
+        category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])[0][0]
 
+    sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
 
     
+    i=0
+    ls = []
+    for item in sorted_dict:
+        ls.append(item[0])
+        i+=1
+        if (i==5):
+            break
+    
+    alpha_beta_similarity = {}
+    for category in ls:
+        rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
+        alpha = rewards_data[category][0]
+        beta = rewards_data[category][1]
+        alpha_beta_similarity[category] = alpha/(alpha+beta)
+    
+    sorted_dict_rewards = dict(sorted(alpha_beta_similarity.items(), key=lambda item: item[1], reverse=True))
+    lsf = []
+    for item in sorted_dict_rewards:
+        lsf.append(item[0])
+
+    recommendations = []
+    for category in lsf:
+        category_list = mongo.db.products.find({'sub_category': category})
+        top_2_items = sorted(category_list, key=lambda x: x.ratings, reverse=True)[:2]
+        recommendations.extend(top_2_items)
+    
+    return jsonify(recommendations), 200
 
 # Endpoint to get product data
 @app.route('/get_product_data/<product_id>', methods=['GET'])
