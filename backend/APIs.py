@@ -114,11 +114,37 @@ def get_recommendations(user_id):
     category_embedding = get_category_embedding()
     category_similarity = {}
     for ch in category_embedding:
-        category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])
-    
+        category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])[0][0]
 
-
+    sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
     
+    i=0
+    ls = []
+    for item in sorted_dict:
+        ls.append(item[0])
+        i+=1
+        if (i==5):
+            break
+    
+    alpha_beta_similarity = {}
+    for category in ls:
+        rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
+        alpha = rewards_data[category][0]
+        beta = rewards_data[category][1]
+        alpha_beta_similarity[category] = alpha/(alpha+beta)
+    
+    sorted_dict_rewards = dict(sorted(alpha_beta_similarity.items(), key=lambda item: item[1], reverse=True))
+    lsf = []
+    for item in sorted_dict_rewards:
+        lsf.append(item[0])
+
+    recommendations = []
+    for category in lsf:
+        category_list = mongo.db.products.find({'sub_category': category})
+        top_2_items = sorted(category_list, key=lambda x: x.ratings, reverse=True)[:2]
+        recommendations.extend(top_2_items)
+    
+    return jsonify(recommendations), 200
 
 # Endpoint to get product data
 @app.route('/get_product_data/<product_id>', methods=['GET'])
