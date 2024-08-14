@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'pages/auth_page.dart';
 import 'pages/main_page.dart';
 import 'pages/cart_page.dart';
 import 'pages/history_page.dart';
@@ -15,11 +16,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: MainPage(), // Set MainPage as the default home screen
-      routes: {
-        '/cart': (context) => CartPage(),
-        '/history': (context) => HistoryPage(),
-      },
+      home: AuthPage(), // Start with the AuthPage
     );
   }
 }
