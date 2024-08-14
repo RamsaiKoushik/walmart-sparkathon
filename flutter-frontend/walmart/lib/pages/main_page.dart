@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'cart_page.dart';
 import 'history_page.dart';
+import 'auth_page.dart';
 
 class MainPage extends StatelessWidget {
   final String userId;
@@ -11,6 +12,8 @@ class MainPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        // backgroundColor: Color(0x1AF421),
+        backgroundColor: Color.fromARGB(255, 20, 136, 213),
         title: Text('All Products'),
         actions: [
           IconButton(
@@ -25,7 +28,7 @@ class MainPage extends StatelessWidget {
             },
           ),
           IconButton(
-            icon: Icon(Icons.receipt), // Orders icon
+            icon: Icon(Icons.receipt),
             onPressed: () {
               Navigator.push(
                 context,
@@ -35,15 +38,7 @@ class MainPage extends StatelessWidget {
               );
             },
           ),
-          IconButton(
-            icon: Icon(Icons.person),
-            onPressed: () {
-              // Navigate to user profile or show user info
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('User ID: $userId')),
-              );
-            },
-          ),
+          ProfileIcon(userId: userId),
         ],
       ),
       body: ListView(
@@ -106,6 +101,41 @@ class MainPage extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class ProfileIcon extends StatelessWidget {
+  final String userId;
+
+  ProfileIcon({required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      onSelected: (value) {
+        if (value == 'logout') {
+          _logout(context);
+        }
+      },
+      itemBuilder: (BuildContext context) => [
+        PopupMenuItem<String>(
+          value: 'username',
+          child: Text('Username: $userId'),
+        ),
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Text('Logout'),
+        ),
+      ],
+      icon: Icon(Icons.person),
+    );
+  }
+
+  void _logout(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => AuthPage()),
+      (Route<dynamic> route) => false,
     );
   }
 }
