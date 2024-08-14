@@ -5,14 +5,17 @@ from MLModel import MultiArmedBandit
 from sklearn.metrics.pairwise import cosine_similarity
 from bson.objectid import ObjectId
 from transformers import BertTokenizer, BertModel
+from flask_cors import CORS
 import torch
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://localhost:27017/yourdbname"
+app.config["MONGO_URI"] = "mongodb://localhost:23017/Ecommerce"
+
+CORS(app)
 mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 
-mab = MultiArmedBandit()
+# mab = MultiArmedBandit()
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained("bert-base-uncased")
 users_collection = mongo.db.users  # Collection for storing users
@@ -63,7 +66,9 @@ def register_user():
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     user_id = users_collection.insert_one({
         "username": username,
-        "password": hashed_password
+        "password": hashed_password,
+        "cart":[],
+        "previous_history":[]
     }).inserted_id
 
     return jsonify({"message": "User registered successfully", "user_id": str(user_id)}), 201
@@ -126,6 +131,18 @@ def get_user_embeddings(user_id):
 
     return jsonify({"user_embedding": user_embedding}), 200
 
+@app.route('/get_all_products', methods=['GET'])
+def get_all_products():
+    try:
+        products = mongo.db.products.find()  # Retrieve all products
+        product_list = []
+        for product in products:
+            # Convert ObjectId to string and exclude MongoDB internal fields
+            product['_id'] = str(product['_id'])
+            product_list.append(product)
+        return jsonify(product_list), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 def get_category_embedding():
     categories = mongo.db.categories.find()  # Assuming you have a 'categories' collection
@@ -178,50 +195,98 @@ def get_recommendations(user_id):
     
     return jsonify(recommendations), 200
 
-# Endpoint to get product data
-@app.route('/get_product_data/<product_id>', methods=['GET'])
-def get_product_data(product_id):
-    product_data = mongo.db.products.find_one({'productid': product_id})
-    if product_data:
-        return jsonify(serialize_doc(product_data))
-    else:
+@app.route('/add_to_cart/<user_id>', methods=['POST'])
+def add_to_cart(user_id):
+    product_id = request.json.get('product_id')
+    
+    if not product_id:
+        return jsonify({"error": "Product ID is required"}), 400
+
+    # Check if the user exists
+    user_data = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    if not user_data:
+        return jsonify({"error": "User not found"}), 404
+    
+    # Check if the product exists
+    product = mongo.db.products.find_one({'_id': ObjectId(product_id)})
+    if not product:
         return jsonify({"error": "Product not found"}), 404
 
-# Endpoint to get all products in a user's cart
+    # Update cart
+    cart = user_data.get('cart', [])
+    for item in cart:
+        if item['product_id'] == product_id:
+            mongo.db.users.update_one(
+                {'_id': ObjectId(user_id), 'cart.product_id': product_id},
+                {'$inc': {'cart.$.frequency': 1}}
+            )
+            return jsonify({"message": "Product frequency updated"}), 200
+
+    # Add new product to the cart
+    mongo.db.users.update_one(
+        {'_id': ObjectId(user_id)},
+        {'$push': {'cart': {'product_id': product_id, 'frequency': 1}}}
+    )
+
+    return jsonify({"message": "Product added to cart"}), 200
+
+
+@app.route('/remove_from_cart/<user_id>', methods=['POST'])
+def remove_from_cart(user_id):
+    product_id = request.json.get('product_id')
+
+    if not product_id:
+        return jsonify({"error": "Product ID is required"}), 400
+
+    # Check if the user exists
+    user_data = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    if not user_data:
+        return jsonify({"error": "User not found"}), 404
+
+    # Update cart
+    cart = user_data.get('cart', [])
+    for item in cart:
+        if item['product_id'] == product_id:
+            if item['frequency'] > 1:
+                mongo.db.users.update_one(
+                    {'_id': ObjectId(user_id), 'cart.product_id': product_id},
+                    {'$inc': {'cart.$.frequency': -1}}
+                )
+            else:
+                mongo.db.users.update_one(
+                    {'_id': ObjectId(user_id)},
+                    {'$pull': {'cart': {'product_id': product_id}}}
+                )
+            return jsonify({"message": "Product removed from cart"}), 200
+
+    return jsonify({"error": "Product not in cart"}), 404
+
+
 @app.route('/get_cart/<user_id>', methods=['GET'])
 def get_cart(user_id):
-    user_data = mongo.db.users.find_one({'userId': user_id})
+    user_data = mongo.db.users.find_one({'_id': ObjectId(user_id)})
     if user_data and 'cart' in user_data:
         cart_products = []
-        for product_id in user_data['cart']:
-            product = mongo.db.products.find_one({'productid': product_id})
+        for item in user_data['cart']:
+            product = mongo.db.products.find_one({'_id': ObjectId(item['product_id'])})
             if product:
-                cart_products.append(serialize_doc(product))
+                product['frequency'] = item['frequency']
+                cart_products.append(product)
         return jsonify(cart_products)
     else:
         return jsonify({"error": "User not found or cart is empty"}), 404
 
-# Endpoint to get previous order history
-@app.route('/get_order_history/<user_id>', methods=['GET'])
-def get_order_history(user_id):
-    user_data = mongo.db.users.find_one({'userId': user_id})
-    if user_data and 'previous_history' in user_data:
-        detailed_order_history = []
-        for order in user_data['previous_history']:
-            detailed_order = {
-                "order_id": order.get('order_id'),
-                "date_of_purchase": order.get('date_of_purchase'),
-                "products": []
-            }
-            for product_id in order.get('products', []):
-                product = mongo.db.products.find_one({'productid': product_id})
-                if product:
-                    detailed_order['products'].append(serialize_doc(product))
-            detailed_order_history.append(detailed_order)
-        return jsonify(detailed_order_history)
-    else:
-        return jsonify({"error": "User not found or no order history"}), 404
 
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+# # Endpoint to get product data
+# @app.route('/get_product_data/<product_id>', methods=['GET'])
+# def get_product_data(product_id):
+#     product_data = mongo.db.products.find_one({'productid': product_id})
+#     if product_data:
+#         return jsonify(serialize_doc(product_data))
+#     else:
+#         return jsonify({"error": "Product not found"}), 404
