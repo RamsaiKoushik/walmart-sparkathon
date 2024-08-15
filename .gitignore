@@ -3,3 +3,4 @@ dataset.csv
 dataset
 embeddings
 *.csv
+Backend/__pycache__

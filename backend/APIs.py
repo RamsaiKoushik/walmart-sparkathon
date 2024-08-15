@@ -11,9 +11,10 @@ import torch
 import re
 import ast 
 import numpy as np
+import random
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://localhost:23017/Ecommerce"
+app.config["MONGO_URI"] = "mongodb://localhost:27017/Ecommerce"
 
 CORS(app)
 mongo = PyMongo(app)
@@ -193,16 +194,7 @@ def get_user_embeddings(user_id):
     if not product_descriptions:
         return []
 
-    # Tokenize and encode the concatenated descriptions using BERT
-    # inputs = tokenizer(product_descriptions, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
-    # with torch.no_grad():
-    #     outputs = model(**inputs)
-
-    # Get the embedding (usually using the [CLS] token's embedding, which is the first token)
-    # user_embedding = outputs.last_hidden_state[:, 0, :].squeeze().tolist()
     user_embedding = getembedding(product_descriptions)
-    # print(user_embedding.detach().numpy())
-    # print(type(user_embedding))
     return user_embedding
 
 @app.route('/get_all_products', methods=['GET'])
@@ -248,17 +240,9 @@ def extract_2d_array_list(data_str):
 @app.route('/get_recommendation/<user_id>', methods=['GET'])
 def get_recommendations(user_id):
     user_embedding = get_user_embeddings(user_id)
-    # print(user_embedding)
-    # print(len(user_embedding))
     category_embedding = get_category_embedding()
-    # print("help")
     category_similarity = {}
-    # print(category_embedding)
-    # print(user_embedding)
     for ch in category_embedding:
-        # print(ch)
-        # print(type(category_embedding[ch]))
-        # print(len(user_embedding))
         category_similarity[ch] = cosine_similarity(user_embedding,extract_2d_array_list(category_embedding[ch]))[0][0]
 
     sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
@@ -266,25 +250,14 @@ def get_recommendations(user_id):
     # print(sorted_dict)
     i=0
     ls = list(sorted_dict.keys())
-    # for item in sorted_dict:
-    #     print(item.key)
-    #     ls.append(item[0])
-    #     i+=1
-    #     if (i==5):
-    #         break
-    ls = ls[:5]
-    # print(ls)
+    
     alpha_beta_similarity = {}
     for category in ls:
         rewards_data = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
-        # print(rewards_data['categories'])
-        # print(category)
         category_record = mongo.db.categories.find_one({'sub_category': category})
         category_id = str(category_record['_id'])
         alpha = rewards_data['categories'][category_id]['alpha']
-        # print(alpha)
         beta = rewards_data['categories'][category_id]['beta']
-        # print(beta)
         alpha_beta_similarity[category] = alpha/(alpha+beta)
     
     # print(alpha_beta_similarity)
@@ -293,32 +266,19 @@ def get_recommendations(user_id):
     lsf = list(sorted_dict_rewards.keys())
 
     recommendations = []
-    # for category in lsf:
-    #     category_list = mongo.db.products.find({'sub_category': category})
-    #     # category_list = list(category_list)
-    #     print(category)
-    #     print(len(category_list))
-    #     top_2_items = sorted(category_list, key=lambda x: x['ratings'], reverse=True)[:2]
-    #     print(top_2_items)
-    #     recommendations.extend(top_2_items)
+
     for category in lsf:
         category_list = list(mongo.db.products.find({'sub_category': category}))
-        # print(category)
-        # print(len(category_list))
+        
+        # Check if there are enough products to sample
+        if len(category_list) >= 2:
+            top_2_items = random.sample(category_list, 2)
+        else:
+            top_2_items = category_list  # If less than 2 products, take whatever is available
 
-        # Perform a selection sort on category_list based on ratings
-        for i in range(len(category_list)):
-            max_index = i
-            for j in range(i + 1, len(category_list)):
-                if category_list[j]['ratings'] > category_list[max_index]['ratings']:
-                    max_index = j
-            # Swap the found maximum element with the first element
-            category_list[i], category_list[max_index] = category_list[max_index], category_list[i]
-
-        # Get the top 2 items after sorting
-        top_2_items = category_list[:2]
-        # print(top_2_items)
         recommendations.extend(top_2_items)
+        if (len(recommendations)>=10): 
+            break
 
     for i in range(len(recommendations)):
         recommendations[i]["_id"] = str(recommendations[i]["_id"])
@@ -520,77 +480,3 @@ def get_product_data(product_id):
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-
-# @app.route('/rewards/<user_id>/<category>', methods=['GET'])
-# def get_rewards(user_id, category):
-#     rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
-#     if rewards_data and category in rewards_data:
-#         alpha = rewards_data[category][0]
-#         beta = rewards_data[category][1]
-#         return jsonify(rewards_data[category]), 200
-#     else:
-#         return jsonify({"error": "User or category not found"}), 404
-
-
-# @app.route('/rewards/<user_id>/<category>', methods=['PUT'])
-# def update_rewards(user_id, category):
-#     alpha = request.json.get('alpha')
-#     beta = request.json.get('beta')
-
-#     if alpha is None or beta is None:
-#         return jsonify({"error": "Both alpha and beta are required"}), 400
-
-#     update_result = mongo.db.rewards.update_one(
-#         {"user_id": user_id},
-#         {"$set": {f"{category}.alpha": alpha, f"{category}.beta": beta}},
-#         upsert=True
-#     )
-
-#     if update_result.modified_count > 0 or update_result.upserted_id is not None:
-#         return jsonify({"message": "Rewards updated successfully"}), 200
-#     else:
-#         return jsonify({"error": "Failed to update rewards"}), 400
-
-
-##checkout past
-# @app.route('/checkout/<user_id>', methods=['POST'])
-# def checkout(user_id):
-#     print(user_id)
-#     try:
-#         # Retrieve the user
-#         user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
-#         if not user:
-#             return jsonify({"error": "User not found"}), 404
-
-#         # Generate a new order ID
-#         order_id = str(ObjectId())
-
-#         # Retrieve cart items from the database
-#         cart_items = user.get('cart', [])
-
-#         # Create the order record
-#         order_record = {
-#             'order_id': order_id,
-#             'items': cart_items,
-#             'date': datetime.datetime.now()
-#         }
-
-#         # Add to previous history
-#         mongo.db.users.update_one(
-#             {'_id': ObjectId(user_id)},
-#             {'$push': {'previous_history': order_record}}
-#         )
-
-#         # Clear the cart
-#         mongo.db.users.update_one(
-#             {'_id': ObjectId(user_id)},
-#             {'$set': {'cart': []}}
-#         )
-
-#         return jsonify({"message": "Purchase successful!"}), 200
-
-#     except Exception as e:
-#         print(f"Error during checkout: {e}")
-#         return jsonify({"error": "An error occurred during checkout"}), 500
