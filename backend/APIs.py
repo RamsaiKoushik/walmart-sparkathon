@@ -400,10 +400,10 @@ def add_to_cart(user_id):
     product = mongo.db.products.find_one({'_id': ObjectId(product_id)})
     if not product:
         return jsonify({"error": "Product not found"}), 404
-    
+    print(product)
     category = mongo.db.categories.find_one({'sub_category':product['sub_category']})
-
     #x -> 0.8
+    print(category)
     update_rewards_logic(user_id, str(category['_id']), 0.8)
 
     # Update cart
