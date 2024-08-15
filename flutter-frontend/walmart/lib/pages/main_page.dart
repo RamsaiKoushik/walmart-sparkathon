@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:walmart/pages/detailed_page.dart';
 import 'dart:convert';
 import 'cart_page.dart';
 import 'history_page.dart';
@@ -145,84 +146,120 @@ class _MainPageState extends State<MainPage> {
           final actualPrice = product['actual_price'];
           final discountPrice = product['discount_price'];
 
-          return Container(
-            width: 200,
-            margin: EdgeInsets.all(10),
-            child: Card(
-              elevation: 5,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Image.network(
-                      product[
-                          'image'], // Use the image URL from the product data
-                      fit: BoxFit.contain,
-                      width: double.infinity,
-                      height: 120, // Fixed height for the image
-                      errorBuilder: (context, error, stackTrace) {
-                        // Provide a default image when an error occurs
-                        return Image.asset(
-                          'assets/default_image2.png',
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                          height: 120,
-                        );
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Text(
-                      product['name'],
-                      maxLines: 2, // Limit text to 2 lines
-                      overflow: TextOverflow
-                          .ellipsis, // Add ellipsis if text overflows
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Row(
-                      children: [
-                        Text(
-                          actualPrice,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey,
-                            decoration: TextDecoration.lineThrough,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          discountPrice,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red, // Highlight discount price
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(
-                        16.0), // Adjust the padding as needed
-                    child: Center(
-                      child: ElevatedButton(
-                        onPressed: () => _addToCart(context, productId),
-                        child: Text('Add to Cart'),
+          return GestureDetector(
+            onTap: () async {
+              // Make API call to track product view
+              await _trackProductView(widget.userId, productId);
+
+              // Navigate to product details page
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProductDetailPage(productId: productId),
+                ),
+              );
+            },
+            child: Container(
+              width: 200,
+              margin: EdgeInsets.all(10),
+              child: Card(
+                elevation: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Image.network(
+                        product['image'],
+                        fit: BoxFit.contain,
+                        width: double.infinity,
+                        height: 120, // Fixed height for the image
+                        errorBuilder: (context, error, stackTrace) {
+                          return Image.asset(
+                            'assets/default_image2.png',
+                            fit: BoxFit.contain,
+                            width: double.infinity,
+                            height: 120,
+                          );
+                        },
                       ),
                     ),
-                  )
-                ],
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        product['name'],
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            actualPrice,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            discountPrice,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                        child: ElevatedButton(
+                          onPressed: () => _addToCart(context, productId),
+                          child: Text('Add to Cart'),
+                        ),
+                      ),
+                    )
+                  ],
+                ),
               ),
             ),
           );
         },
       ),
     );
+  }
+
+  Future<void> _trackProductView(String userId, String productId) async {
+    final url = 'http://127.0.0.1:5000/update_rewards/$userId/$productId';
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'delta': 0.6}), // Convert body to JSON string
+      );
+
+      print('Status Code: ${response.statusCode}');
+      print('Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        // Success
+        print('Rewards updated successfully');
+      } else {
+        // Handle error
+        print('Failed to update rewards: ${response.statusCode}');
+      }
+    } catch (e) {
+      // Handle exceptions
+      print('Error during HTTP request: $e');
+    }
   }
 
   Future<void> _addToCart(BuildContext context, String productId) async {

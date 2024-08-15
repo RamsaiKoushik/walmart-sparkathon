@@ -57,9 +57,9 @@ def update_rewards_logic(user_id, category, x):
     user_rewards = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
    
     if not user_rewards or category not in user_rewards['categories']:
-        print("huh")
-        print(not user_rewards)
-        print(user_rewards)
+        # print("huh")
+        # print(not user_rewards)
+        # print(user_rewards)
         return {"error": "Category not found for the user"}, 404
 
     current_alpha = user_rewards['categories'][category].get('alpha', 1)
@@ -81,20 +81,29 @@ def update_rewards_logic(user_id, category, x):
     else:
         return {"error": "Failed to update rewards"}, 400
 
-@app.route('/update_rewards/<user_id>/<category>', methods=['POST'])
-def update_rewards(user_id, category):
-    x = request.json.get('delta')
+@app.route('/update_rewards/<user_id>/<product_id>', methods=['POST'])
+def update_rewards(user_id, product_id):
+    delta = request.json.get('delta')
 
-    if x is None:
+    if delta is None:
         return jsonify({"error": "delta is required"}), 400
 
     try:
-        x = float(x)
-        response, status_code = update_rewards_logic(user_id, category, x)
+        delta = float(delta)
+        product = mongo.db.products.find_one({'_id':ObjectId(product_id)})
+        if product:
+            category = mongo.db.categories.find_one({'sub_category':product['sub_category']})
+            if category:
+                response, status_code = update_rewards_logic(user_id, str(category['_id']), delta)
+            else:
+                return jsonify({"error":"category not found"}),400
+        else:
+            return jsonify({"error":"product not found"}),400
+        
         return jsonify(response), status_code
 
     except ValueError:
-        return jsonify({"error": "Invalid value for x"}), 400
+        return jsonify({"error": "Invalid value for delta"}), 400
 
 
 @app.route('/register', methods=['POST'])
