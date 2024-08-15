@@ -2,15 +2,15 @@ import pandas as pd
 from pymongo import MongoClient
 
 # Connect to MongoDB
-client = MongoClient('mongodb://localhost:23017/')
+client = MongoClient('mongodb://localhost:27017/')
 db = client['Ecommerce']
 
 
 products_collection = db['products']
 categories_collection = db['categories']
 
-products_df = pd.read_csv("Hidden products.csv")
-categories_df = pd.read_csv("average_embeddings.csv")
+products_df = pd.read_csv("./dataset/Hidden products.csv")
+categories_df = pd.read_csv("./dataset/average_embeddings.csv")
 
 products_df_cleaned = products_df.dropna()
 categories_df_cleaned = categories_df.dropna()
