@@ -6,6 +6,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from bson.objectid import ObjectId
 from transformers import BertTokenizer, BertModel
 from flask_cors import CORS
+import datetime
 import torch
 
 app = Flask(__name__)
@@ -149,8 +150,8 @@ def get_category_embedding():
     category_embeddings = {}
 
     for category in categories:
-        category_name = category.get('name')
-        category_embedding = category.get('avg_embedding')
+        category_name = category.get('sub_category')
+        category_embedding = category.get('embeddings')
         if category_name and category_embedding:
             category_embeddings[category_name] = category_embedding
 
@@ -160,13 +161,17 @@ def get_category_embedding():
 def get_recommendations(user_id):
     user_embedding = get_user_embeddings(user_id)
     category_embedding = get_category_embedding()
+    print("help")
     category_similarity = {}
+    # print(category_embedding)
+    # print(user_embedding)
     for ch in category_embedding:
+        print(ch)
         category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])[0][0]
 
     sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
 
-    
+    print(sorted_dict)
     i=0
     ls = []
     for item in sorted_dict:
@@ -195,8 +200,84 @@ def get_recommendations(user_id):
     
     return jsonify(recommendations), 200
 
+@app.route('/get_previous_orders/<user_id>', methods=['GET'])
+def get_previous_orders(user_id):
+    try:
+        user_data = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        if not user_data:
+            return jsonify({"error": "User not found"}), 404
+        
+        previous_history = user_data.get('previous_history', [])
+        
+        # Fetch product details for each order
+        orders_with_details = []
+        for order in previous_history:
+            order_details = {'order_id': order['order_id'], 'items': [],'date':order['date']}
+            for item in order['items']:
+                product_id = ObjectId(item['product_id'])
+                product = mongo.db.products.find_one({'_id': product_id})
+                if product:
+                    product_info = {
+                        'name': product.get('name'),
+                        'image': product.get('image'),
+                        'price': product.get('discount_price'),
+                        'quantity': item['quantity']
+                    }
+                    order_details['items'].append(product_info)
+            orders_with_details.append(order_details)
+        
+        return jsonify(orders_with_details), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/checkout/<user_id>', methods=['POST'])
+def checkout(user_id):
+    print(user_id)
+    try:
+        # Retrieve the user
+        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Generate a new order ID
+        order_id = str(ObjectId())
+
+        # Retrieve cart items from the database
+        cart_items = user.get('cart', [])
+
+        # Create the order record
+        order_record = {
+            'order_id': order_id,
+            'items': cart_items,
+            'date': datetime.datetime.now()
+        }
+
+        # Add to previous history
+        mongo.db.users.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$push': {'previous_history': order_record}}
+        )
+
+        # Clear the cart
+        mongo.db.users.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': {'cart': []}}
+        )
+
+        return jsonify({"message": "Purchase successful!"}), 200
+
+    except Exception as e:
+        print(f"Error during checkout: {e}")
+        return jsonify({"error": "An error occurred during checkout"}), 500
+
+
+
+## Cart Operations
+
 @app.route('/add_to_cart/<user_id>', methods=['POST'])
 def add_to_cart(user_id):
+    print(user_id)
     product_id = request.json.get('product_id')
     
     if not product_id:
