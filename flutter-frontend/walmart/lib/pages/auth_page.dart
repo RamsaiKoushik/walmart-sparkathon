@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:walmart/pages/main_page.dart';
+
 class AuthPage extends StatefulWidget {
   @override
   _AuthPageState createState() => _AuthPageState();
@@ -16,26 +18,32 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<void> _authenticate() async {
     final url = _isLogin
-        ? 'http://your-backend-url/login'
-        : 'http://your-backend-url/signup';
+        ? 'http://127.0.0.1:5000/login'
+        : 'http://127.0.0.1:5000/register';
 
     try {
       final response = await http.post(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'email': _email,
+          'username': _email,
           'password': _password,
           if (!_isLogin) 'username': _username,
         }),
       );
+      // print(response.toString());
+      // print(response.statusCode);
+      // print(response.body.toString());
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
         if (_isLogin) {
           // Navigate to the main page after successful login
-          Navigator.pushReplacementNamed(context, '/main',
-              arguments: responseData['userId']);
+          // ignore: use_build_context_synchronously
+
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (context) => MainPage(userId: responseData['user_id']),
+          ));
         } else {
           // Show success message after successful signup
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -93,7 +101,7 @@ class _AuthPageState extends State<AuthPage> {
                   _email = value;
                 },
                 validator: (value) {
-                  if (value!.isEmpty || !value.contains('@')) {
+                  if (value!.isEmpty) {
                     return 'Please enter a valid email address';
                   }
                   return null;
