@@ -166,7 +166,7 @@ def get_user_data(user_id):
 def getembedding(text):
     encoded_input = tokenizer(text, return_tensors='pt')
     output = model(**encoded_input)
-    print(type(output.pooler_output))
+    # print(type(output.pooler_output))
     return tensor_to_numpy(output.pooler_output)
 
 def get_user_embeddings(user_id):
@@ -202,7 +202,7 @@ def get_user_embeddings(user_id):
     # user_embedding = outputs.last_hidden_state[:, 0, :].squeeze().tolist()
     user_embedding = getembedding(product_descriptions)
     # print(user_embedding.detach().numpy())
-    print(type(user_embedding))
+    # print(type(user_embedding))
     return user_embedding
 
 @app.route('/get_all_products', methods=['GET'])
@@ -256,9 +256,9 @@ def get_recommendations(user_id):
     # print(category_embedding)
     # print(user_embedding)
     for ch in category_embedding:
-        print(ch)
+        # print(ch)
         # print(type(category_embedding[ch]))
-        print(len(user_embedding))
+        # print(len(user_embedding))
         category_similarity[ch] = cosine_similarity(user_embedding,extract_2d_array_list(category_embedding[ch]))[0][0]
 
     sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
@@ -273,31 +273,57 @@ def get_recommendations(user_id):
     #     if (i==5):
     #         break
     ls = ls[:5]
-    print(ls)
+    # print(ls)
     alpha_beta_similarity = {}
     for category in ls:
         rewards_data = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
-        print(rewards_data['categories'])
-        print(category)
+        # print(rewards_data['categories'])
+        # print(category)
         category_record = mongo.db.categories.find_one({'sub_category': category})
         category_id = str(category_record['_id'])
         alpha = rewards_data['categories'][category_id]['alpha']
-        print(alpha)
+        # print(alpha)
         beta = rewards_data['categories'][category_id]['beta']
-        print(beta)
+        # print(beta)
         alpha_beta_similarity[category] = alpha/(alpha+beta)
     
+    # print(alpha_beta_similarity)
     sorted_dict_rewards = dict(sorted(alpha_beta_similarity.items(), key=lambda item: item[1], reverse=True))
-    lsf = []
-    for item in sorted_dict_rewards:
-        lsf.append(item[0])
+
+    lsf = list(sorted_dict_rewards.keys())
 
     recommendations = []
+    # for category in lsf:
+    #     category_list = mongo.db.products.find({'sub_category': category})
+    #     # category_list = list(category_list)
+    #     print(category)
+    #     print(len(category_list))
+    #     top_2_items = sorted(category_list, key=lambda x: x['ratings'], reverse=True)[:2]
+    #     print(top_2_items)
+    #     recommendations.extend(top_2_items)
     for category in lsf:
-        category_list = mongo.db.products.find({'sub_category': category})
-        top_2_items = sorted(category_list, key=lambda x: x.ratings, reverse=True)[:2]
+        category_list = list(mongo.db.products.find({'sub_category': category}))
+        # print(category)
+        # print(len(category_list))
+
+        # Perform a selection sort on category_list based on ratings
+        for i in range(len(category_list)):
+            max_index = i
+            for j in range(i + 1, len(category_list)):
+                if category_list[j]['ratings'] > category_list[max_index]['ratings']:
+                    max_index = j
+            # Swap the found maximum element with the first element
+            category_list[i], category_list[max_index] = category_list[max_index], category_list[i]
+
+        # Get the top 2 items after sorting
+        top_2_items = category_list[:2]
+        # print(top_2_items)
         recommendations.extend(top_2_items)
-    
+
+    for i in range(len(recommendations)):
+        recommendations[i]["_id"] = str(recommendations[i]["_id"])
+
+    print(recommendations)
     return jsonify(recommendations), 200
 
 @app.route('/get_previous_orders/<user_id>', methods=['GET'])
