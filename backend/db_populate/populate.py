@@ -12,15 +12,18 @@ categories_collection = db['categories']
 products_df = pd.read_csv("Hidden products.csv")
 categories_df = pd.read_csv("average_embeddings.csv")
 
+products_df_cleaned = products_df.dropna()
+categories_df_cleaned = categories_df.dropna()
+
 # Convert the dataframe to a dictionary and insert into MongoDB
-records = products_df.to_dict(orient='records')
+records = products_df_cleaned.to_dict(orient='records')
 products_collection.insert_many(records)
 
 # Rename columns to match MongoDB collection
 categories_df.rename(columns={'sub_category': 'category_name', 'embeddings': 'avg_embedding'}, inplace=True)
 # Convert the dataframe to a dictionary and insert into MongoDB
 
-records = categories_df.to_dict(orient='records')
+records = categories_df_cleaned.to_dict(orient='records')
 categories_collection.insert_many(records)
 
 
