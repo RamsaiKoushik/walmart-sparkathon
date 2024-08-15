@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:walmart/widgets/product_section.dart';
+
 class CartPage extends StatefulWidget {
   final String userId;
 
@@ -13,7 +15,7 @@ class CartPage extends StatefulWidget {
 
 class _CartPageState extends State<CartPage> {
   List<Map<String, dynamic>> _cartItems = [];
-  List<Map<String, dynamic>> _recommendations = [];
+  List<dynamic> _recommendations = [];
 
   @override
   void initState() {
@@ -161,7 +163,8 @@ class _CartPageState extends State<CartPage> {
               children: [
                 buildCartItems(),
                 buildSectionTitle('You May Also Like'),
-                buildRecommendations(),
+                ProductSection(
+                    products: _recommendations, userId: widget.userId)
               ],
             ),
           ),
