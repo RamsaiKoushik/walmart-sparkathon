@@ -218,14 +218,14 @@ def add_to_cart(user_id):
         if item['product_id'] == product_id:
             mongo.db.users.update_one(
                 {'_id': ObjectId(user_id), 'cart.product_id': product_id},
-                {'$inc': {'cart.$.frequency': 1}}
+                {'$inc': {'cart.$.quantity': 1}}
             )
-            return jsonify({"message": "Product frequency updated"}), 200
+            return jsonify({"message": "Product quantity updated"}), 200
 
     # Add new product to the cart
     mongo.db.users.update_one(
         {'_id': ObjectId(user_id)},
-        {'$push': {'cart': {'product_id': product_id, 'frequency': 1}}}
+        {'$push': {'cart': {'product_id': product_id, 'quantity': 1}}}
     )
 
     return jsonify({"message": "Product added to cart"}), 200
@@ -234,6 +234,7 @@ def add_to_cart(user_id):
 @app.route('/remove_from_cart/<user_id>', methods=['POST'])
 def remove_from_cart(user_id):
     product_id = request.json.get('product_id')
+    print("enetered_dude remove!!")
 
     if not product_id:
         return jsonify({"error": "Product ID is required"}), 400
@@ -247,10 +248,10 @@ def remove_from_cart(user_id):
     cart = user_data.get('cart', [])
     for item in cart:
         if item['product_id'] == product_id:
-            if item['frequency'] > 1:
+            if item['quantity'] > 1:
                 mongo.db.users.update_one(
                     {'_id': ObjectId(user_id), 'cart.product_id': product_id},
-                    {'$inc': {'cart.$.frequency': -1}}
+                    {'$inc': {'cart.$.quantity': -1}}
                 )
             else:
                 mongo.db.users.update_one(
@@ -270,7 +271,8 @@ def get_cart(user_id):
         for item in user_data['cart']:
             product = mongo.db.products.find_one({'_id': ObjectId(item['product_id'])})
             if product:
-                product['frequency'] = item['frequency']
+                product['quantity'] = item['quantity']
+                product['_id'] = str(product['_id'])
                 cart_products.append(product)
         return jsonify(cart_products)
     else:
