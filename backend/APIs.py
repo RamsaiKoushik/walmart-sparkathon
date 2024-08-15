@@ -20,37 +20,78 @@ bcrypt = Bcrypt(app)
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained("bert-base-uncased")
 users_collection = mongo.db.users  # Collection for storing users
+categories_collection = mongo.db.categories
+rewards_collection = mongo.db.rewards
 
 
-@app.route('/rewards/<user_id>/<category>', methods=['GET'])
-def get_rewards(user_id, category):
-    rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
-    if rewards_data and category in rewards_data:
-        alpha = rewards_data[category][0]
-        beta = rewards_data[category][1]
-        return jsonify(rewards_data[category]), 200
-    else:
-        return jsonify({"error": "User or category not found"}), 404
+def populate_rewards_for_new_user(user_id):
+    try:
+        # Fetch all categories
+        categories = categories_collection.find()
+        reward_data = {}
 
+        for category in categories:
+            category_id = str(category['_id'])  # Assuming '_id' is used as category_id
+            reward_data[category_id] = {
+                "alpha":1, 
+                "beta": 1
+            }
 
-@app.route('/rewards/<user_id>/<category>', methods=['PUT'])
-def update_rewards(user_id, category):
-    alpha = request.json.get('alpha')
-    beta = request.json.get('beta')
+        # Insert into rewards collection
+        rewards_collection.insert_one({
+            "user_id": user_id,
+            "categories": reward_data
+        })
+        return {"message": "Rewards data populated successfully", "user_id": str(user_id)}, 200
+    except Exception as e:
+        print({"error": str(e)})
+        return {"error": str(e)}, 500
+    
 
-    if alpha is None or beta is None:
-        return jsonify({"error": "Both alpha and beta are required"}), 400
+def update_rewards_logic(user_id, category, x):
 
+    # Retrieve the current values of alpha and beta
+    user_rewards = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
+   
+    if not user_rewards or category not in user_rewards['categories']:
+        print("huh")
+        print(not user_rewards)
+        print(user_rewards)
+        return {"error": "Category not found for the user"}, 404
+
+    current_alpha = user_rewards['categories'][category].get('alpha', 1)
+    current_beta = user_rewards['categories'][category].get('beta', 1)
+
+    # Calculate new values for alpha and beta
+    new_alpha = current_alpha + x
+    new_beta = current_beta + (1 - x)
+
+    # Update the rewards collection
     update_result = mongo.db.rewards.update_one(
-        {"user_id": user_id},
-        {"$set": {f"{category}.alpha": alpha, f"{category}.beta": beta}},
+        {"user_id": ObjectId(user_id)},
+        {"$set": {f"categories.{category}.alpha": new_alpha, f"categories.{category}.beta": new_beta}},
         upsert=True
     )
 
     if update_result.modified_count > 0 or update_result.upserted_id is not None:
-        return jsonify({"message": "Rewards updated successfully"}), 200
+        return {"message": "Rewards updated successfully"}, 200
     else:
-        return jsonify({"error": "Failed to update rewards"}), 400
+        return {"error": "Failed to update rewards"}, 400
+
+@app.route('/update_rewards/<user_id>/<category>', methods=['POST'])
+def update_rewards(user_id, category):
+    x = request.json.get('delta')
+
+    if x is None:
+        return jsonify({"error": "delta is required"}), 400
+
+    try:
+        x = float(x)
+        response, status_code = update_rewards_logic(user_id, category, x)
+        return jsonify(response), status_code
+
+    except ValueError:
+        return jsonify({"error": "Invalid value for x"}), 400
 
 
 @app.route('/register', methods=['POST'])
@@ -72,7 +113,10 @@ def register_user():
         "previous_history":[]
     }).inserted_id
 
-    return jsonify({"message": "User registered successfully", "user_id": str(user_id)}), 201
+    # if(populate_response.get('error',"no_error")!="no_error"):
+    #     return jsonify({"message": "error populating the rewards table", "user_id": str(user_id)}),201
+
+    return populate_rewards_for_new_user(user_id)
 
 
 @app.route('/login', methods=['POST'])
@@ -161,17 +205,17 @@ def get_category_embedding():
 def get_recommendations(user_id):
     user_embedding = get_user_embeddings(user_id)
     category_embedding = get_category_embedding()
-    print("help")
+    # print("help")
     category_similarity = {}
     # print(category_embedding)
     # print(user_embedding)
     for ch in category_embedding:
-        print(ch)
+        # print(ch)
         category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])[0][0]
 
     sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
 
-    print(sorted_dict)
+    # print(sorted_dict)
     i=0
     ls = []
     for item in sorted_dict:
@@ -230,10 +274,9 @@ def get_previous_orders(user_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route('/checkout/<user_id>', methods=['POST'])
 def checkout(user_id):
-    print(user_id)
+    # print(user_id)
     try:
         # Retrieve the user
         user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
@@ -265,6 +308,25 @@ def checkout(user_id):
             {'$set': {'cart': []}}
         )
 
+        # Process each cart item for rewards
+        for item in cart_items:
+            product_id = item.get('product_id')
+            quantity = item.get('quantity', 1)  # Default quantity to 1 if not specified
+
+            # Retrieve the product details
+            product = mongo.db.products.find_one({'_id': ObjectId(product_id)})
+            if product:
+                sub_category = product.get('sub_category')
+                if sub_category:
+                    # Retrieve category details
+                    category = mongo.db.categories.find_one({'sub_category': sub_category})
+
+                    if category:
+                        # Update rewards based on the quantity of the product
+                        category_id = str(category['_id'])
+                        for _ in range(0,quantity):
+                            update_rewards_logic(user_id, category_id, 1)
+
         return jsonify({"message": "Purchase successful!"}), 200
 
     except Exception as e:
@@ -272,12 +334,11 @@ def checkout(user_id):
         return jsonify({"error": "An error occurred during checkout"}), 500
 
 
-
 ## Cart Operations
 
 @app.route('/add_to_cart/<user_id>', methods=['POST'])
 def add_to_cart(user_id):
-    print(user_id)
+    # print(user_id)
     product_id = request.json.get('product_id')
     
     if not product_id:
@@ -292,6 +353,11 @@ def add_to_cart(user_id):
     product = mongo.db.products.find_one({'_id': ObjectId(product_id)})
     if not product:
         return jsonify({"error": "Product not found"}), 404
+    
+    category = mongo.db.categories.find_one({'sub_category':product['sub_category']})
+
+    #x -> 0.8
+    update_rewards_logic(user_id, str(category['_id']), 0.8)
 
     # Update cart
     cart = user_data.get('cart', [])
@@ -315,7 +381,6 @@ def add_to_cart(user_id):
 @app.route('/remove_from_cart/<user_id>', methods=['POST'])
 def remove_from_cart(user_id):
     product_id = request.json.get('product_id')
-    print("enetered_dude remove!!")
 
     if not product_id:
         return jsonify({"error": "Product ID is required"}), 400
@@ -329,16 +394,19 @@ def remove_from_cart(user_id):
     cart = user_data.get('cart', [])
     for item in cart:
         if item['product_id'] == product_id:
+            print(item['quantity'])
             if item['quantity'] > 1:
                 mongo.db.users.update_one(
                     {'_id': ObjectId(user_id), 'cart.product_id': product_id},
                     {'$inc': {'cart.$.quantity': -1}}
                 )
             else:
+                print("entered")
                 mongo.db.users.update_one(
                     {'_id': ObjectId(user_id)},
                     {'$pull': {'cart': {'product_id': product_id}}}
                 )
+                print("entered")
             return jsonify({"message": "Product removed from cart"}), 200
 
     return jsonify({"error": "Product not in cart"}), 404
@@ -373,3 +441,75 @@ if __name__ == '__main__':
 #         return jsonify(serialize_doc(product_data))
 #     else:
 #         return jsonify({"error": "Product not found"}), 404
+
+# @app.route('/rewards/<user_id>/<category>', methods=['GET'])
+# def get_rewards(user_id, category):
+#     rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
+#     if rewards_data and category in rewards_data:
+#         alpha = rewards_data[category][0]
+#         beta = rewards_data[category][1]
+#         return jsonify(rewards_data[category]), 200
+#     else:
+#         return jsonify({"error": "User or category not found"}), 404
+
+
+# @app.route('/rewards/<user_id>/<category>', methods=['PUT'])
+# def update_rewards(user_id, category):
+#     alpha = request.json.get('alpha')
+#     beta = request.json.get('beta')
+
+#     if alpha is None or beta is None:
+#         return jsonify({"error": "Both alpha and beta are required"}), 400
+
+#     update_result = mongo.db.rewards.update_one(
+#         {"user_id": user_id},
+#         {"$set": {f"{category}.alpha": alpha, f"{category}.beta": beta}},
+#         upsert=True
+#     )
+
+#     if update_result.modified_count > 0 or update_result.upserted_id is not None:
+#         return jsonify({"message": "Rewards updated successfully"}), 200
+#     else:
+#         return jsonify({"error": "Failed to update rewards"}), 400
+
+
+##checkout past
+# @app.route('/checkout/<user_id>', methods=['POST'])
+# def checkout(user_id):
+#     print(user_id)
+#     try:
+#         # Retrieve the user
+#         user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+#         if not user:
+#             return jsonify({"error": "User not found"}), 404
+
+#         # Generate a new order ID
+#         order_id = str(ObjectId())
+
+#         # Retrieve cart items from the database
+#         cart_items = user.get('cart', [])
+
+#         # Create the order record
+#         order_record = {
+#             'order_id': order_id,
+#             'items': cart_items,
+#             'date': datetime.datetime.now()
+#         }
+
+#         # Add to previous history
+#         mongo.db.users.update_one(
+#             {'_id': ObjectId(user_id)},
+#             {'$push': {'previous_history': order_record}}
+#         )
+
+#         # Clear the cart
+#         mongo.db.users.update_one(
+#             {'_id': ObjectId(user_id)},
+#             {'$set': {'cart': []}}
+#         )
+
+#         return jsonify({"message": "Purchase successful!"}), 200
+
+#     except Exception as e:
+#         print(f"Error during checkout: {e}")
+#         return jsonify({"error": "An error occurred during checkout"}), 500
