@@ -74,7 +74,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     return ListTile(
                       leading: Image.network(
                         product['image'],
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                         width: 50,
                         height: 50,
                         errorBuilder: (context, error, stackTrace) {

@@ -29,11 +29,25 @@ class ProductDetailPage extends StatelessWidget {
 
           return Row(
             children: [
-              Expanded(
-                flex: 2,
-                child: Image.network(
-                  product?['image'] ?? '',
-                  fit: BoxFit.cover,
+              Container(
+                width: 450, // Set the desired width
+                height: 450, // Set the desired height
+                child: Expanded(
+                  flex: 2,
+                  child: Image.network(
+                    product?['image'] ?? '',
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Image.asset(
+                        'assets/default_image2.png',
+                        fit: BoxFit.contain,
+                        width: double.infinity,
+                        height: double.infinity,
+                      );
+                    },
+                  ),
                 ),
               ),
               Expanded(
@@ -74,11 +88,11 @@ class ProductDetailPage extends StatelessWidget {
                         'Number of Ratings: ${product?['no_of_ratings'] ?? 'N/A'}',
                         style: TextStyle(fontSize: 16),
                       ),
-                      SizedBox(height: 10),
-                      Text(
-                        product?['description'] ?? '',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                      // SizedBox(height: 10),
+                      // Text(
+                      //   product?['description'] ?? '',
+                      //   style: TextStyle(fontSize: 16),
+                      // ),
                     ],
                   ),
                 ),
@@ -92,7 +106,7 @@ class ProductDetailPage extends StatelessWidget {
 
   Future<Map<String, dynamic>> _fetchProductDetails(String productId) async {
     final response = await http.get(
-      Uri.parse('https://your-backend-api.com/product-details/$productId'),
+      Uri.parse('http://127.0.0.1:5000/get_product_data/$productId'),
     );
 
     if (response.statusCode == 200) {

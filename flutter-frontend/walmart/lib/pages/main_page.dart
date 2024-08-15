@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:walmart/pages/detailed_page.dart';
+import 'package:walmart/widgets/product_section.dart';
 import 'dart:convert';
 import 'cart_page.dart';
 import 'history_page.dart';
@@ -114,11 +115,12 @@ class _MainPageState extends State<MainPage> {
           : ListView(
               children: [
                 buildSectionTitle('All Products'),
-                buildProductSection(context),
+                ProductSection(products: _products, userId: widget.userId),
                 buildSectionTitle('You May Like'),
-                buildProductSection(context),
+                // buildProductSection(context),
+                ProductSection(products: _products, userId: widget.userId),
                 buildSectionTitle('Recommended for You'),
-                buildProductSection(context),
+                ProductSection(products: _products, userId: widget.userId),
               ],
             ),
     );
