@@ -13,7 +13,7 @@ import ast
 import numpy as np
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://localhost:27017/Ecommerce"
+app.config["MONGO_URI"] = "mongodb://localhost:23017/Ecommerce"
 
 CORS(app)
 mongo = PyMongo(app)
@@ -483,20 +483,19 @@ def get_cart(user_id):
     else:
         return jsonify({"error": "User not found or cart is empty"}), 404
 
-
+# Endpoint to get product data
+@app.route('/get_product_data/<product_id>', methods=['GET'])
+def get_product_data(product_id):
+    product_data = mongo.db.products.find_one({'_id': ObjectId(product_id)})
+    if product_data:
+        return jsonify(serialize_doc(product_data))
+    else:
+        return jsonify({"error": "Product not found"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
 
 
-# # Endpoint to get product data
-# @app.route('/get_product_data/<product_id>', methods=['GET'])
-# def get_product_data(product_id):
-#     product_data = mongo.db.products.find_one({'productid': product_id})
-#     if product_data:
-#         return jsonify(serialize_doc(product_data))
-#     else:
-#         return jsonify({"error": "Product not found"}), 404
 
 # @app.route('/rewards/<user_id>/<category>', methods=['GET'])
 # def get_rewards(user_id, category):
