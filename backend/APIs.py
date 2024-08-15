@@ -197,6 +197,21 @@ def get_user_embeddings(user_id):
     user_embedding = getembedding(product_descriptions)
     return user_embedding
 
+def get_user_embeddings_cart(user_id):
+    user_cart = get_cart(user_id)
+    if (len(user_cart) == 0):
+        return get_user_embeddings(user_id)
+    
+    # Retrieve and concatenate product descriptions
+    num_prods = 0
+    embeddings = []
+    for item in user_cart:
+        product = mongo.db.products.find_one({'_id': ObjectId(item['product_id'])})
+        embedding = getembedding(product['name'])
+        embeddings.append(embedding)
+    
+    return sum(embeddings)/len(embeddings)
+
 @app.route('/get_all_products', methods=['GET'])
 def get_all_products():
     try:
@@ -236,6 +251,55 @@ def extract_2d_array_list(data_str):
 
     array = np.array(numbers).reshape((-1, 768))  
     return array
+
+@app.route('/get_recommendation_cart/<user_id>', methods=['GET'])
+def get_recommendations_cart(user_id):
+    user_embedding = get_user_embeddings_cart(user_id)
+    category_embedding = get_category_embedding()
+    category_similarity = {}
+    for ch in category_embedding:
+        category_similarity[ch] = cosine_similarity(user_embedding,extract_2d_array_list(category_embedding[ch]))[0][0]
+
+    sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
+
+    # print(sorted_dict)
+    i=0
+    ls = list(sorted_dict.keys())
+    
+    alpha_beta_similarity = {}
+    for category in ls:
+        rewards_data = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
+        category_record = mongo.db.categories.find_one({'sub_category': category})
+        category_id = str(category_record['_id'])
+        alpha = rewards_data['categories'][category_id]['alpha']
+        beta = rewards_data['categories'][category_id]['beta']
+        alpha_beta_similarity[category] = alpha/(alpha+beta)
+    
+    # print(alpha_beta_similarity)
+    sorted_dict_rewards = dict(sorted(alpha_beta_similarity.items(), key=lambda item: item[1], reverse=True))
+
+    lsf = list(sorted_dict_rewards.keys())
+
+    recommendations = []
+
+    for category in lsf:
+        category_list = list(mongo.db.products.find({'sub_category': category}))
+        
+        # Check if there are enough products to sample
+        if len(category_list) >= 2:
+            top_2_items = random.sample(category_list, 2)
+        else:
+            top_2_items = category_list  # If less than 2 products, take whatever is available
+
+        recommendations.extend(top_2_items)
+        if (len(recommendations)>=10): 
+            break
+
+    for i in range(len(recommendations)):
+        recommendations[i]["_id"] = str(recommendations[i]["_id"])
+
+    print(recommendations)
+    return jsonify(recommendations), 200
 
 @app.route('/get_recommendation/<user_id>', methods=['GET'])
 def get_recommendations(user_id):
@@ -467,7 +531,7 @@ def get_cart(user_id):
                 cart_products.append(product)
         return jsonify(cart_products)
     else:
-        return jsonify({"error": "User not found or cart is empty"}), 404
+        return jsonify({"error": "User not found"}), 404
 
 # Endpoint to get product data
 @app.route('/get_product_data/<product_id>', methods=['GET'])
