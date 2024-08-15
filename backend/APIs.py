@@ -8,9 +8,12 @@ from transformers import BertTokenizer, BertModel
 from flask_cors import CORS
 import datetime
 import torch
+import re
+import ast 
+import numpy as np
 
 app = Flask(__name__)
-app.config["MONGO_URI"] = "mongodb://localhost:23017/Ecommerce"
+app.config["MONGO_URI"] = "mongodb://localhost:27017/Ecommerce"
 
 CORS(app)
 mongo = PyMongo(app)
@@ -93,33 +96,49 @@ def login_user():
 def serialize_doc(doc):
     doc['_id'] = str(doc['_id'])
     return doc
+def tensor_to_numpy(tensor):
+    if tensor.requires_grad:  # Check if the tensor requires gradients
+        tensor = tensor.detach()  # Detach from the computation graph
+    if tensor.is_cuda:  # Check if the tensor is on GPU
+        tensor = tensor.cpu()  # Move to CPU
+    return tensor.numpy()  # Convert to NumPy array
 
 # Function to get user data (not as an endpoint)
 def get_user_data(user_id):
-    return mongo.db.users.find_one({'userId': user_id})
+    # print(user_id)
+    # userId = str(user_id)
+    return mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
 # Endpoint to get user embeddings for recommendations
 def getembedding(text):
     encoded_input = tokenizer(text, return_tensors='pt')
     output = model(**encoded_input)
-    return output.pooler_output
+    print(type(output.pooler_output))
+    return tensor_to_numpy(output.pooler_output)
 
 def get_user_embeddings(user_id):
     user_data = get_user_data(user_id)
     
     if not user_data or 'previous_history' not in user_data:
-        return jsonify({"error": "User not found or no order history"}), 404
+        print("There There")
+        return []
 
     # Retrieve and concatenate product descriptions
     product_descriptions = ""
     for order in user_data['previous_history']:
-        for product_id in order['products']:
-            product_data = mongo.db.products.find_one({'productid': product_id})
-            if product_data and 'product_name' in product_data:
-                product_descriptions += product_data['product_name'] + " "
+        print("order")
+        # print(order)
+        for product in order['items']:
+            # print(product)
+            product_data = mongo.db.products.find_one({'_id': ObjectId(product['product_id'])})
+            print(product_data)
+            if product_data and 'name' in product_data:
+                product_descriptions += product_data['name'] + " "
+                # print(product_descriptions)
+                print("product_descriptions")
 
     if not product_descriptions:
-        return jsonify({"error": "No product descriptions found"}), 404
+        return []
 
     # Tokenize and encode the concatenated descriptions using BERT
     # inputs = tokenizer(product_descriptions, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
@@ -129,8 +148,9 @@ def get_user_embeddings(user_id):
     # Get the embedding (usually using the [CLS] token's embedding, which is the first token)
     # user_embedding = outputs.last_hidden_state[:, 0, :].squeeze().tolist()
     user_embedding = getembedding(product_descriptions)
-
-    return jsonify({"user_embedding": user_embedding}), 200
+    # print(user_embedding.detach().numpy())
+    print(type(user_embedding))
+    return user_embedding
 
 @app.route('/get_all_products', methods=['GET'])
 def get_all_products():
@@ -156,10 +176,27 @@ def get_category_embedding():
             category_embeddings[category_name] = category_embedding
 
     return category_embeddings
+def extract_2d_array_list(data_str):
+
+    data_str = data_str.replace('\n', ' ')
+
+    # Replace one or more spaces with a single comma
+    data_str = re.sub(r'\s+', ',', data_str)
+
+    # Ensure there are no extra commas at the end
+    data_str = '[' + data_str.strip(',') + ']'
+
+    # Evaluate the string safely
+    numbers = ast.literal_eval(data_str)
+
+    array = np.array(numbers).reshape((-1, 768))  
+    return array
 
 @app.route('/get_recommendation/<user_id>', methods=['GET'])
 def get_recommendations(user_id):
     user_embedding = get_user_embeddings(user_id)
+    # print(user_embedding)
+    # print(len(user_embedding))
     category_embedding = get_category_embedding()
     print("help")
     category_similarity = {}
@@ -167,24 +204,34 @@ def get_recommendations(user_id):
     # print(user_embedding)
     for ch in category_embedding:
         print(ch)
-        category_similarity[ch] = cosine_similarity(user_embedding,category_embedding[ch])[0][0]
+        # print(type(category_embedding[ch]))
+        print(len(user_embedding))
+        category_similarity[ch] = cosine_similarity(user_embedding,extract_2d_array_list(category_embedding[ch]))[0][0]
 
     sorted_dict = dict(sorted(category_similarity.items(), key=lambda item: item[1], reverse=True))
 
     print(sorted_dict)
     i=0
-    ls = []
-    for item in sorted_dict:
-        ls.append(item[0])
-        i+=1
-        if (i==5):
-            break
-    
+    ls = list(sorted_dict.keys())
+    # for item in sorted_dict:
+    #     print(item.key)
+    #     ls.append(item[0])
+    #     i+=1
+    #     if (i==5):
+    #         break
+    ls = ls[:5]
+    print(ls)
     alpha_beta_similarity = {}
     for category in ls:
-        rewards_data = mongo.db.rewards.find_one({"user_id": user_id}, {f"{category}": 1})
-        alpha = rewards_data[category][0]
-        beta = rewards_data[category][1]
+        rewards_data = mongo.db.rewards.find_one({"user_id": ObjectId(user_id)})
+        print(rewards_data['categories'])
+        print(category)
+        category_record = mongo.db.categories.find_one({'sub_category': category})
+        category_id = str(category_record['_id'])
+        alpha = rewards_data['categories'][category_id]['alpha']
+        print(alpha)
+        beta = rewards_data['categories'][category_id]['beta']
+        print(beta)
         alpha_beta_similarity[category] = alpha/(alpha+beta)
     
     sorted_dict_rewards = dict(sorted(alpha_beta_similarity.items(), key=lambda item: item[1], reverse=True))
